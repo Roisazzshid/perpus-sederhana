@@ -1,10 +1,6 @@
-import './globals.css';
+import type { Metadata } from 'next';
 
-// Minimal local Metadata type to avoid dependency on 'next' types
-type Metadata = {
-  title?: string;
-  description?: string;
-};
+import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Perpus - Sederhana',
@@ -22,4 +18,5 @@ export default function RootLayout({
     </html>
   );
 }
+
 
