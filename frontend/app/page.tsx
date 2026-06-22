@@ -109,10 +109,7 @@ function CrudTable<T extends { id: number }>({
         ))}
         {!rows.length && (
           <tr>
-            <td
-              colSpan={columns.length + 1}
-              style={{ textAlign: "center", color: "#777" }}
-            >
+            <td colSpan={columns.length + 1} style={{ textAlign: "center", color: "#777" }}>
               Tidak ada data
             </td>
           </tr>
@@ -160,20 +157,18 @@ export default function Page() {
           select: "*",
           orderBy: { column: "id", ascending: false },
         });
-        // supaSelect returns raw data from fetch; type is any
-        return res as any;
+        return (res as any) ?? [];
       },
 
       upsertBook: async (
-        payload: Partial<Book> & { title?: string; author?: string },
+        payload: Partial<Book> & { title: string; author: string },
         id?: number | null
       ) => {
         if (id) {
-          await supaUpdate("books", id, payload);
+          await supaUpdate("books", id, payload as any);
           return;
         }
-        const insertRes = await supaInsert("books", payload);
-        return insertRes;
+        await supaInsert("books", payload as any);
       },
 
       deleteBook: async (id: number) => {
@@ -186,19 +181,18 @@ export default function Page() {
           select: "*",
           orderBy: { column: "id", ascending: false },
         });
-        return res as any;
+        return (res as any) ?? [];
       },
 
       upsertMember: async (
-        payload: Partial<Member> & { name?: string },
+        payload: Partial<Member> & { name: string },
         id?: number | null
       ) => {
         if (id) {
-          await supaUpdate("members", id, payload);
+          await supaUpdate("members", id, payload as any);
           return;
         }
-        const insertRes = await supaInsert("members", payload);
-        return insertRes;
+        await supaInsert("members", payload as any);
       },
 
       deleteMember: async (id: number) => {
@@ -207,88 +201,48 @@ export default function Page() {
 
       // -------- Loans --------
       listLoans: async () => {
-        // Step 1: load loans
         const loansRes = (await supaSelect<LoanRow>("loans", {
           select: "*",
           orderBy: { column: "id", ascending: false },
-        })) as any as LoanRow[];
+        })) as any;
 
-        const loansRows = loansRes || [];
+        const loansRows: LoanRow[] = (loansRes as any) ?? [];
         if (!loansRows.length) return [];
 
-        // Step 2: load referenced books/members in parallel
         const bookIds = Array.from(new Set(loansRows.map((l) => l.book_id)));
-        const memberIds = Array.from(
-          new Set(loansRows.map((l) => l.member_id))
-        );
+        const memberIds = Array.from(new Set(loansRows.map((l) => l.member_id)));
 
-        // fetch by ids using PostgREST in supaSelect supports only simple select/order;
-        // simplest: use multiple selects (acceptable for small dataset).
-        const [booksPart, membersPart] = await Promise.all([
-          Promise.all(
-            bookIds.map(async (bid) => {
-              const r = (await supaSelect<Book>("books", {
-                select: "*",
-                orderBy: { column: "id", ascending: true },
-              })) as any as Book[];
-              // fallback if RLS/policies restrict; we filter client-side anyway
-              return r.find((b) => b.id === bid) || null;
-            })
-          ),
-          Promise.all(
-            memberIds.map(async (mid) => {
-              const r = (await supaSelect<Member>("members", {
-                select: "*",
-                orderBy: { column: "id", ascending: true },
-              })) as any as Member[];
-              return r.find((m) => m.id === mid) || null;
-            })
-          ),
+        const [booksAllRes, membersAllRes] = await Promise.all([
+          supaSelect<Book>("books", { select: "*", orderBy: { column: "id", ascending: true } }),
+          supaSelect<Member>("members", { select: "*", orderBy: { column: "id", ascending: true } }),
         ]);
 
+        const booksAll: Book[] = (booksAllRes as any) ?? [];
+        const membersAll: Member[] = (membersAllRes as any) ?? [];
+
         const booksById = new Map<number, Book>(
-          (booksPart.filter(Boolean) as Book[]).map((b) => [b.id, b])
+          booksAll.filter((b) => bookIds.includes(b.id)).map((b) => [b.id, b])
         );
         const membersById = new Map<number, Member>(
-          (membersPart.filter(Boolean) as Member[]).map((m) => [m.id, m])
+          membersAll.filter((m) => memberIds.includes(m.id)).map((m) => [m.id, m])
         );
 
-        // Step 3: map join fields
-        const joined: Loan[] = loansRows.map((l) => {
-          const b = booksById.get(l.book_id);
-          const m = membersById.get(l.member_id);
-          return {
-            ...l,
-            book_title: b?.title ?? "-",
-            member_name: m?.name ?? "-",
-          };
-        });
-
-        return joined;
+        return loansRows.map((l) => ({
+          ...l,
+          book_title: booksById.get(l.book_id)?.title ?? "-",
+          member_name: membersById.get(l.member_id)?.name ?? "-",
+        }));
       },
 
-      createLoan: async (payload: {
-        book_id: number;
-        member_id: number;
-        notes: string | null;
-      }) => {
-        // RPC params names defined in schema-postgres.sql:
-        // create_loan_and_decrease_stock(p_book_id, p_member_id, p_notes)
-        const res = await supaRpc<any>(
-          "create_loan_and_decrease_stock",
-          {
-            p_book_id: payload.book_id,
-            p_member_id: payload.member_id,
-            p_notes: payload.notes,
-          }
-        );
+      createLoan: async (payload: { book_id: number; member_id: number; notes: string | null }) => {
+        const res = await supaRpc<any>("create_loan_and_decrease_stock", {
+          p_book_id: payload.book_id,
+          p_member_id: payload.member_id,
+          p_notes: payload.notes,
+        });
 
-        // RPC returns a row (table function). In client helper we return res.data from supaFetch,
-        // which likely is an array. Normalize:
-        const rows = (res as any[]) || [];
-        if (Array.isArray(rows) && rows.length) {
-          return rows[0];
-        }
+        const rows = (res as any[]) ?? [];
+        if (Array.isArray(rows) && rows.length) return rows[0];
         return res;
       },
 
@@ -297,10 +251,8 @@ export default function Page() {
           p_loan_id: loanId,
         });
 
-        const rows = (res as any[]) || [];
-        if (Array.isArray(rows) && rows.length) {
-          return rows[0];
-        }
+        const rows = (res as any[]) ?? [];
+        if (Array.isArray(rows) && rows.length) return rows[0];
         return res;
       },
     };
@@ -310,11 +262,7 @@ export default function Page() {
     if (tab === "buku") setBooks(await api.listBooks());
     if (tab === "anggota") setMembers(await api.listMembers());
     if (tab === "peminjaman") {
-      const [b, l, m] = await Promise.all([
-        api.listBooks(),
-        api.listLoans(),
-        api.listMembers(),
-      ]);
+      const [b, l, m] = await Promise.all([api.listBooks(), api.listLoans(), api.listMembers()]);
       setBooks(b);
       setLoans(l);
       setMembers(m);
@@ -334,8 +282,7 @@ export default function Page() {
       isbn: bookForm.isbn || null,
       stock: Number(bookForm.stock) || 0,
     };
-
-    await api.upsertBook(payload, editingBookId);
+    await api.upsertBook(payload as any, editingBookId);
     setEditingBookId(null);
     setBookForm({ title: "", author: "", isbn: "", stock: 0 });
     setBooks(await api.listBooks());
@@ -348,8 +295,7 @@ export default function Page() {
       email: memberForm.email || null,
       phone: memberForm.phone || null,
     };
-
-    await api.upsertMember(payload, editingMemberId);
+    await api.upsertMember(payload as any, editingMemberId);
     setEditingMemberId(null);
     setMemberForm({ name: "", email: "", phone: "" });
     setMembers(await api.listMembers());
@@ -357,13 +303,11 @@ export default function Page() {
 
   const handleCreateLoan = async (e: React.FormEvent) => {
     e.preventDefault();
-
     await api.createLoan({
       book_id: Number(loanForm.book_id),
       member_id: Number(loanForm.member_id),
       notes: loanForm.notes || null,
     });
-
     setLoanForm({ book_id: "", member_id: "", notes: "" });
     await refreshAll();
   };
@@ -378,15 +322,9 @@ export default function Page() {
       <h1>Perpus - Sederhana</h1>
 
       <div className="tabs">
-        <TabButton active={tab === "buku"} onClick={() => setTab("buku")}>
-          Buku
-        </TabButton>
-        <TabButton active={tab === "anggota"} onClick={() => setTab("anggota")}>
-          Anggota
-        </TabButton>
-        <TabButton active={tab === "peminjaman"} onClick={() => setTab("peminjaman")}>
-          Peminjaman
-        </TabButton>
+        <TabButton active={tab === "buku"} onClick={() => setTab("buku")}>Buku</TabButton>
+        <TabButton active={tab === "anggota"} onClick={() => setTab("anggota")}>Anggota</TabButton>
+        <TabButton active={tab === "peminjaman"} onClick={() => setTab("peminjaman")}>Peminjaman</TabButton>
       </div>
 
       {tab === "buku" && (
@@ -396,37 +334,21 @@ export default function Page() {
             <form onSubmit={handleBookSubmit} className="form">
               <label>
                 Judul
-                <input
-                  value={bookForm.title}
-                  onChange={(e) => setBookForm({ ...bookForm, title: e.target.value })}
-                />
+                <input value={bookForm.title} onChange={(e) => setBookForm({ ...bookForm, title: e.target.value })} />
               </label>
               <label>
                 Penulis
-                <input
-                  value={bookForm.author}
-                  onChange={(e) => setBookForm({ ...bookForm, author: e.target.value })}
-                />
+                <input value={bookForm.author} onChange={(e) => setBookForm({ ...bookForm, author: e.target.value })} />
               </label>
               <label>
                 ISBN
-                <input
-                  value={bookForm.isbn}
-                  onChange={(e) => setBookForm({ ...bookForm, isbn: e.target.value })}
-                />
+                <input value={bookForm.isbn} onChange={(e) => setBookForm({ ...bookForm, isbn: e.target.value })} />
               </label>
               <label>
                 Stok
-                <input
-                  type="number"
-                  value={bookForm.stock}
-                  onChange={(e) => setBookForm({ ...bookForm, stock: Number(e.target.value) })}
-                />
+                <input type="number" value={bookForm.stock} onChange={(e) => setBookForm({ ...bookForm, stock: Number(e.target.value) })} />
               </label>
-              <button className="btn primary" type="submit">
-                Simpan
-              </button>
-
+              <button className="btn primary" type="submit">Simpan</button>
               {editingBookId && (
                 <button
                   className="btn"
@@ -451,3 +373,157 @@ export default function Page() {
                 { key: "stock", label: "Stok" },
               ]}
               rows={books}
+              onEdit={(r) => {
+                setEditingBookId(r.id);
+                setBookForm({ title: r.title, author: r.author, isbn: r.isbn || "", stock: r.stock });
+              }}
+              onDelete={async (id) => {
+                if (!confirm("Hapus buku ini?")) return;
+                await api.deleteBook(id);
+                setBooks(await api.listBooks());
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {tab === "anggota" && (
+        <div className="grid">
+          <div className="card">
+            <h2>{editingMemberId ? "Edit Anggota" : "Tambah Anggota"}</h2>
+            <form onSubmit={handleMemberSubmit} className="form">
+              <label>
+                Nama
+                <input value={memberForm.name} onChange={(e) => setMemberForm({ ...memberForm, name: e.target.value })} />
+              </label>
+              <label>
+                Email
+                <input value={memberForm.email} onChange={(e) => setMemberForm({ ...memberForm, email: e.target.value })} />
+              </label>
+              <label>
+                Telepon
+                <input value={memberForm.phone} onChange={(e) => setMemberForm({ ...memberForm, phone: e.target.value })} />
+              </label>
+              <button className="btn primary" type="submit">Simpan</button>
+              {editingMemberId && (
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => {
+                    setEditingMemberId(null);
+                    setMemberForm({ name: "", email: "", phone: "" });
+                  }}
+                >
+                  Batal
+                </button>
+              )}
+            </form>
+          </div>
+
+          <div className="card">
+            <h2>Daftar Anggota</h2>
+            <CrudTable
+              columns={[
+                { key: "name", label: "Nama" },
+                { key: "email", label: "Email", render: (r: Member) => r.email || "-" },
+                { key: "phone", label: "Telepon", render: (r: Member) => r.phone || "-" },
+              ]}
+              rows={members}
+              onEdit={(r) => {
+                setEditingMemberId(r.id);
+                setMemberForm({ name: r.name, email: r.email || "", phone: r.phone || "" });
+              }}
+              onDelete={async (id) => {
+                if (!confirm("Hapus anggota ini?")) return;
+                await api.deleteMember(id);
+                setMembers(await api.listMembers());
+              }}
+            />
+          </div>
+      )}
+
+      {tab === "peminjaman" && (
+        <div className="grid">
+          <div className="card">
+            <h2>Buat Peminjaman</h2>
+            <form onSubmit={handleCreateLoan} className="form">
+              <label>
+                Buku
+                <select value={loanForm.book_id} onChange={(e) => setLoanForm({ ...loanForm, book_id: e.target.value })}>
+                  <option value="">-- pilih buku --</option>
+                  {books.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.title} (stok: {b.stock})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Anggota
+                <select value={loanForm.member_id} onChange={(e) => setLoanForm({ ...loanForm, member_id: e.target.value })}>
+                  <option value="">-- pilih anggota --</option>
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Catatan
+                <input value={loanForm.notes} onChange={(e) => setLoanForm({ ...loanForm, notes: e.target.value })} />
+              </label>
+
+              <button className="btn primary" type="submit">Pinjam</button>
+            </form>
+          </div>
+
+          <div className="card">
+            <h2>Daftar Peminjaman</h2>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Buku</th>
+                  <th>Anggota</th>
+                  <th>Status</th>
+                  <th>Dipinjam</th>
+                  <th>Pengembalian</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loans.map((l) => (
+                  <tr key={l.id}>
+                    <td>{l.id}</td>
+                    <td>{l.book_title}</td>
+                    <td>{l.member_name}</td>
+                    <td>{l.status}</td>
+                    <td>{new Date(l.borrowed_at).toLocaleString()}</td>
+                    <td>{l.returned_at ? new Date(l.returned_at).toLocaleString() : "-"}</td>
+                    <td>
+                      {l.status === "borrowed" ? (
+                        <button className="btn" onClick={() => handleReturn(l.id)}>Return</button>
+                      ) : (
+                        <span style={{ color: "#777" }}>-</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+
+                {!loans.length && (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: "center", color: "#777" }}>
+                      Tidak ada peminjaman
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+      )}
+    </div>
+  );
+}

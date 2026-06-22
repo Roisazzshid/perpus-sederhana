@@ -3,11 +3,12 @@
 
 type Json = any;
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL as string | undefined) ?? '';
+const SUPABASE_ANON_KEY = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string | undefined) ?? '';
 
 if (!SUPABASE_URL) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL');
 if (!SUPABASE_ANON_KEY) throw new Error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY');
+
 
 const headers = {
   apikey: SUPABASE_ANON_KEY,
