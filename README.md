@@ -28,7 +28,7 @@ npm run dev
 ```
 Backend akan jalan di `http://localhost:5000`.
 
-## 3) Setup Frontend
+## 3) Setup Frontend (Next.js)
 1. Install & run:
 
 ```bash
@@ -36,10 +36,11 @@ cd frontend
 npm install
 npm run dev
 ```
-Frontend akan jalan di `http://localhost:5173`.
+Frontend akan jalan di `http://localhost:5173` (port Next: 5173).
 
 > Jika ingin ganti URL API, set env:
-> - `VITE_API_BASE` (default: `http://localhost:5000/api`)
+> - `NEXT_PUBLIC_API_BASE` (default: `http://localhost:5000/api`)
+
 
 ## Endpoint API
 - `GET /api/books`

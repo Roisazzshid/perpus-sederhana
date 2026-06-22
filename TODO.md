@@ -1,31 +1,34 @@
-# TODO - Web Perpus React + Node + MySQL
+# TODO - Migrasi Frontend React (Vite) ke Next.js
 
-## Rencana pengerjaan
-1. Membuat struktur project: `backend/`, `frontend/`, `database/`.
-2. Backend:
-   - Setup Express server + konfigurasi `.env`.
-   - Setup koneksi MySQL.
-   - Buat migration/schema SQL (tabel: books, members, loans) + FK.
-   - Implementasi API REST untuk:
-     - Books CRUD
-     - Members CRUD
-     - Loans (create peminjaman) + return.
-3. Frontend:
-   - Setup React app.
-   - Buat halaman:
-     - Daftar + form CRUD Buku
-     - Daftar + form CRUD Anggota
-     - Peminjaman (pilih book & member) + daftar loans + tombol return.
-   - Integrasi ke backend API.
-4. Dokumentasi:
-   - Buat `README.md` (cara import SQL, konfigurasi `.env`, cara run frontend/backend).
-5. Validasi cepat:
-   - Cek endpoint bisa diakses.
-   - Cek alur peminjaman & pengembalian tersambung ke DB.
+## Step 1
+- [x] Buat struktur project Next.js di folder `frontend/` (App Router: `frontend/app/*`).
 
-## Status
-- [x] Database schema dibuat
-- [x] Backend API dibuat (books, members, loans)
-- [x] Frontend UI dibuat (CRUD + peminjaman/return)
-- [x] Dokumentasi dibuat
+
+## Step 2
+- [x] Ganti `frontend/package.json` dari Vite+React menjadi Next.js.
+
+
+## Step 3
+- [x] Pindahkan UI dari `frontend/src/App.jsx` ke `frontend/app/page.tsx` (pakai `"use client"`).
+
+
+## Step 4
+- [x] Pindahkan styling dari `frontend/src/style.css` ke `frontend/app/globals.css` dan link di `frontend/app/layout.tsx`.
+
+
+## Step 5
+- [x] Ubah env base API dari `VITE_API_BASE` menjadi `NEXT_PUBLIC_API_BASE`.
+
+
+## Step 6
+- [x] Hapus file Vite yang tidak dipakai (`frontend/index.html`, `frontend/vite.config.js`, `frontend/src/main.jsx`, dll).
+
+
+
+## Step 7
+- [x] Update `README.md` instruksi setup frontend Next.js.
+
+
+## Step 8
+- [ ] Jalankan dan test: `backend` + `frontend`.
 
