@@ -1,6 +1,10 @@
-import type { Metadata } from 'next';
-
 import './globals.css';
+
+// Minimal local Metadata type to avoid dependency on 'next' types
+type Metadata = {
+  title?: string;
+  description?: string;
+};
 
 export const metadata: Metadata = {
   title: 'Perpus - Sederhana',
