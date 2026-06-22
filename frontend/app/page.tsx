@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:5000/api';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'https://perpus-sederhana-be.vercel.app/api';
 
 type Book = {
   id: number;
