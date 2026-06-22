@@ -1,13 +1,19 @@
 const express = require('express');
-const pool = require('../db');
+const supabase = require('../db_supabase');
 
 const router = express.Router();
+
 
 // GET /api/books
 router.get('/', async (req, res, next) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM books ORDER BY id DESC');
-    res.json(rows);
+    const { data, error } = await supabase
+      .from('books')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (error) throw error;
+    res.json(data || []);
   } catch (err) {
     next(err);
   }
@@ -16,9 +22,15 @@ router.get('/', async (req, res, next) => {
 // GET /api/books/:id
 router.get('/:id', async (req, res, next) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM books WHERE id = ?', [req.params.id]);
-    if (!rows.length) return res.status(404).json({ message: 'Book not found' });
-    res.json(rows[0]);
+    const { data, error } = await supabase
+      .from('books')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ message: 'Book not found' });
+    res.json(data);
   } catch (err) {
     next(err);
   }
@@ -32,13 +44,19 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ message: 'title and author are required' });
     }
 
-    const [result] = await pool.query(
-      'INSERT INTO books (title, author, isbn, stock) VALUES (?, ?, ?, ?)',
-      [title, author, isbn || null, stock ?? 0]
-    );
+    const { data, error } = await supabase
+      .from('books')
+      .insert({
+        title,
+        author,
+        isbn: isbn || null,
+        stock: stock ?? 0
+      })
+      .select('*')
+      .single();
 
-    const [rows] = await pool.query('SELECT * FROM books WHERE id = ?', [result.insertId]);
-    res.status(201).json(rows[0]);
+    if (error) throw error;
+    res.status(201).json(data);
   } catch (err) {
     next(err);
   }
@@ -49,22 +67,29 @@ router.put('/:id', async (req, res, next) => {
   try {
     const { title, author, isbn, stock } = req.body;
 
-    const [rowsExisting] = await pool.query('SELECT * FROM books WHERE id = ?', [req.params.id]);
-    if (!rowsExisting.length) return res.status(404).json({ message: 'Book not found' });
+    const { data: existing, error: existingErr } = await supabase
+      .from('books')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
 
-    await pool.query(
-      'UPDATE books SET title = ?, author = ?, isbn = ?, stock = ? WHERE id = ?',
-      [
-        title ?? rowsExisting[0].title,
-        author ?? rowsExisting[0].author,
-        isbn === undefined ? rowsExisting[0].isbn : isbn,
-        stock === undefined ? rowsExisting[0].stock : stock,
-        req.params.id
-      ]
-    );
+    if (existingErr) throw existingErr;
+    if (!existing) return res.status(404).json({ message: 'Book not found' });
 
-    const [rows] = await pool.query('SELECT * FROM books WHERE id = ?', [req.params.id]);
-    res.json(rows[0]);
+    const { data, error } = await supabase
+      .from('books')
+      .update({
+        title: title ?? existing.title,
+        author: author ?? existing.author,
+        isbn: isbn === undefined ? existing.isbn : isbn,
+        stock: stock === undefined ? existing.stock : stock
+      })
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     next(err);
   }
@@ -73,10 +98,18 @@ router.put('/:id', async (req, res, next) => {
 // DELETE /api/books/:id
 router.delete('/:id', async (req, res, next) => {
   try {
-    const [rowsExisting] = await pool.query('SELECT * FROM books WHERE id = ?', [req.params.id]);
-    if (!rowsExisting.length) return res.status(404).json({ message: 'Book not found' });
+    const { data: existing, error: existingErr } = await supabase
+      .from('books')
+      .select('id')
+      .eq('id', req.params.id)
+      .maybeSingle();
 
-    await pool.query('DELETE FROM books WHERE id = ?', [req.params.id]);
+    if (existingErr) throw existingErr;
+    if (!existing) return res.status(404).json({ message: 'Book not found' });
+
+    const { error } = await supabase.from('books').delete().eq('id', req.params.id);
+    if (error) throw error;
+
     res.json({ message: 'Book deleted' });
   } catch (err) {
     next(err);
@@ -84,4 +117,6 @@ router.delete('/:id', async (req, res, next) => {
 });
 
 module.exports = router;
+
+
 

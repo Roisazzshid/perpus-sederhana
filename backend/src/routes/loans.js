@@ -1,137 +1,82 @@
 const express = require('express');
-const pool = require('../db');
+const supabase = require('../db_supabase');
 
 const router = express.Router();
+
 
 // GET /api/loans
 router.get('/', async (req, res, next) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT 
-        l.*, 
-        b.title AS book_title,
-        m.name AS member_name
-      FROM loans l
-      JOIN books b ON b.id = l.book_id
-      JOIN members m ON m.id = l.member_id
-      ORDER BY l.id DESC`
-    );
+    // Using foreign keys via joins
+    const { data, error } = await supabase
+      .from('loans')
+      .select('id, book_id, member_id, borrowed_at, returned_at, status, notes, books(title), members(name)')
+      .order('id', { ascending: false });
+
+    if (error) throw error;
+
+    const rows = (data || []).map((l) => ({
+      id: l.id,
+      book_id: l.book_id,
+      member_id: l.member_id,
+      borrowed_at: l.borrowed_at,
+      returned_at: l.returned_at,
+      status: l.status,
+      notes: l.notes,
+      book_title: l.books?.title ?? null,
+      member_name: l.members?.name ?? null
+    }));
+
     res.json(rows);
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/loans (create peminjaman)
+// POST /api/loans (create peminjaman) - via RPC atomic
 router.post('/', async (req, res, next) => {
-  const conn = await pool.getConnection();
   try {
     const { book_id, member_id, notes } = req.body;
     if (!book_id || !member_id) {
       return res.status(400).json({ message: 'book_id and member_id are required' });
     }
 
-    await conn.beginTransaction();
+    const { data, error } = await supabase.rpc('create_loan_and_decrease_stock', {
+      p_book_id: Number(book_id),
+      p_member_id: Number(member_id),
+      p_notes: notes || null
+    });
 
-    // Check stock
-    const [bookRows] = await conn.query('SELECT * FROM books WHERE id = ? FOR UPDATE', [book_id]);
-    if (!bookRows.length) {
-      await conn.rollback();
-      return res.status(404).json({ message: 'Book not found' });
-    }
+    if (error) throw error;
 
-    const book = bookRows[0];
-    if (book.stock <= 0) {
-      await conn.rollback();
-      return res.status(400).json({ message: 'Stock buku habis' });
-    }
-
-    // Ensure member exists
-    const [memberRows] = await conn.query('SELECT * FROM members WHERE id = ? FOR UPDATE', [member_id]);
-    if (!memberRows.length) {
-      await conn.rollback();
-      return res.status(404).json({ message: 'Member not found' });
-    }
-
-    // Insert loan
-    const [result] = await conn.query(
-      'INSERT INTO loans (book_id, member_id, notes) VALUES (?, ?, ?)',
-      [book_id, member_id, notes || null]
-    );
-
-    // Decrease stock
-    await conn.query('UPDATE books SET stock = stock - 1 WHERE id = ?', [book_id]);
-
-    await conn.commit();
-
-    const [loanRows] = await pool.query(
-      `SELECT l.*, b.title AS book_title, m.name AS member_name
-       FROM loans l
-       JOIN books b ON b.id = l.book_id
-       JOIN members m ON m.id = l.member_id
-       WHERE l.id = ?`,
-      [result.insertId]
-    );
-
-    res.status(201).json(loanRows[0]);
+    // RPC returns a set; take first row
+    const row = Array.isArray(data) ? data[0] : data;
+    res.status(201).json(row);
   } catch (err) {
-    try {
-      await conn.rollback();
-    } catch (_) {}
     next(err);
-  } finally {
-    conn.release();
   }
 });
 
-// PUT /api/loans/:id/return
+// PUT /api/loans/:id/return - via RPC atomic
 router.put('/:id/return', async (req, res, next) => {
-  const conn = await pool.getConnection();
   try {
-    await conn.beginTransaction();
+    const loanId = Number(req.params.id);
 
-    const [loanRows] = await conn.query('SELECT * FROM loans WHERE id = ? FOR UPDATE', [req.params.id]);
-    if (!loanRows.length) {
-      await conn.rollback();
-      return res.status(404).json({ message: 'Loan not found' });
-    }
+    const { data, error } = await supabase.rpc('return_loan_and_increase_stock', {
+      p_loan_id: loanId
+    });
 
-    const loan = loanRows[0];
-    if (loan.status === 'returned') {
-      await conn.rollback();
-      return res.status(400).json({ message: 'Loan sudah dikembalikan' });
-    }
+    if (error) throw error;
 
-    // Mark returned
-    await conn.query(
-      'UPDATE loans SET status = ?, returned_at = CURRENT_TIMESTAMP WHERE id = ?',
-      ['returned', req.params.id]
-    );
-
-    // Increase stock
-    await conn.query('UPDATE books SET stock = stock + 1 WHERE id = ?', [loan.book_id]);
-
-    await conn.commit();
-
-    const [updatedRows] = await pool.query(
-      `SELECT l.*, b.title AS book_title, m.name AS member_name
-       FROM loans l
-       JOIN books b ON b.id = l.book_id
-       JOIN members m ON m.id = l.member_id
-       WHERE l.id = ?`,
-      [req.params.id]
-    );
-
-    res.json(updatedRows[0]);
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return res.status(404).json({ message: 'Loan not found' });
+    res.json(row);
   } catch (err) {
-    try {
-      await conn.rollback();
-    } catch (_) {}
     next(err);
-  } finally {
-    conn.release();
   }
 });
 
 module.exports = router;
+
+
 

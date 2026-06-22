@@ -1,13 +1,19 @@
 const express = require('express');
-const pool = require('../db');
+const supabase = require('../db_supabase');
 
 const router = express.Router();
+
 
 // GET /api/members
 router.get('/', async (req, res, next) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM members ORDER BY id DESC');
-    res.json(rows);
+    const { data, error } = await supabase
+      .from('members')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (error) throw error;
+    res.json(data || []);
   } catch (err) {
     next(err);
   }
@@ -16,9 +22,15 @@ router.get('/', async (req, res, next) => {
 // GET /api/members/:id
 router.get('/:id', async (req, res, next) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM members WHERE id = ?', [req.params.id]);
-    if (!rows.length) return res.status(404).json({ message: 'Member not found' });
-    res.json(rows[0]);
+    const { data, error } = await supabase
+      .from('members')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ message: 'Member not found' });
+    res.json(data);
   } catch (err) {
     next(err);
   }
@@ -30,13 +42,18 @@ router.post('/', async (req, res, next) => {
     const { name, email, phone } = req.body;
     if (!name) return res.status(400).json({ message: 'name is required' });
 
-    const [result] = await pool.query(
-      'INSERT INTO members (name, email, phone) VALUES (?, ?, ?)',
-      [name, email || null, phone || null]
-    );
+    const { data, error } = await supabase
+      .from('members')
+      .insert({
+        name,
+        email: email || null,
+        phone: phone || null
+      })
+      .select('*')
+      .single();
 
-    const [rows] = await pool.query('SELECT * FROM members WHERE id = ?', [result.insertId]);
-    res.status(201).json(rows[0]);
+    if (error) throw error;
+    res.status(201).json(data);
   } catch (err) {
     next(err);
   }
@@ -47,21 +64,28 @@ router.put('/:id', async (req, res, next) => {
   try {
     const { name, email, phone } = req.body;
 
-    const [rowsExisting] = await pool.query('SELECT * FROM members WHERE id = ?', [req.params.id]);
-    if (!rowsExisting.length) return res.status(404).json({ message: 'Member not found' });
+    const { data: existing, error: existingErr } = await supabase
+      .from('members')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
 
-    await pool.query(
-      'UPDATE members SET name = ?, email = ?, phone = ? WHERE id = ?',
-      [
-        name ?? rowsExisting[0].name,
-        email === undefined ? rowsExisting[0].email : email,
-        phone === undefined ? rowsExisting[0].phone : phone,
-        req.params.id
-      ]
-    );
+    if (existingErr) throw existingErr;
+    if (!existing) return res.status(404).json({ message: 'Member not found' });
 
-    const [rows] = await pool.query('SELECT * FROM members WHERE id = ?', [req.params.id]);
-    res.json(rows[0]);
+    const { data, error } = await supabase
+      .from('members')
+      .update({
+        name: name ?? existing.name,
+        email: email === undefined ? existing.email : email,
+        phone: phone === undefined ? existing.phone : phone
+      })
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     next(err);
   }
@@ -70,10 +94,18 @@ router.put('/:id', async (req, res, next) => {
 // DELETE /api/members/:id
 router.delete('/:id', async (req, res, next) => {
   try {
-    const [rowsExisting] = await pool.query('SELECT * FROM members WHERE id = ?', [req.params.id]);
-    if (!rowsExisting.length) return res.status(404).json({ message: 'Member not found' });
+    const { data: existing, error: existingErr } = await supabase
+      .from('members')
+      .select('id')
+      .eq('id', req.params.id)
+      .maybeSingle();
 
-    await pool.query('DELETE FROM members WHERE id = ?', [req.params.id]);
+    if (existingErr) throw existingErr;
+    if (!existing) return res.status(404).json({ message: 'Member not found' });
+
+    const { error } = await supabase.from('members').delete().eq('id', req.params.id);
+    if (error) throw error;
+
     res.json({ message: 'Member deleted' });
   } catch (err) {
     next(err);
@@ -81,4 +113,6 @@ router.delete('/:id', async (req, res, next) => {
 });
 
 module.exports = router;
+
+
 
