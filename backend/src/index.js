@@ -8,6 +8,17 @@ const booksRoutes = require('./routes/books');
 const membersRoutes = require('./routes/members');
 const loansRoutes = require('./routes/loans');
 
+if (!booksRoutes || typeof booksRoutes !== 'function') {
+  console.error('booksRoutes is not middleware. Got:', booksRoutes);
+}
+if (!membersRoutes || typeof membersRoutes !== 'function') {
+  console.error('membersRoutes is not middleware. Got:', membersRoutes);
+}
+if (!loansRoutes || typeof loansRoutes !== 'function') {
+  console.error('loansRoutes is not middleware. Got:', loansRoutes);
+}
+
+
 const app = express();
 
 app.use(cors());
